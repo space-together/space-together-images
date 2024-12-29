@@ -1,7 +1,6 @@
 // src/index.ts
 
 import express, { Request, Response } from 'express';
-import multer from 'multer';
 import { v2 as cloudinary } from 'cloudinary';
 import dotenv from 'dotenv';
 
@@ -18,39 +17,60 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configure Multer
-const storage = multer.memoryStorage();
-const upload = multer({ storage });
+// Middleware to parse JSON body
+app.use(express.json());
 
-// API to upload an image
-app.post('/upload', upload.single('image'), async (req: Request, res: Response): Promise<void> => {
+// Type Definitions
+interface Image {
+  image: string;
+}
+
+interface ImageRespondError {
+  message: string;
+  status: number;
+}
+
+interface ImageRespondSuccess {
+  message: string;
+  uri: string;
+  public_id: string;
+  status: number;
+}
+
+// Endpoint to save avatars only
+app.post('/upload/avatar', async (req: Request, res: Response): Promise<void> => {
   try {
-    if (!req.file) {
-      res.status(400).json({ error: 'No file uploaded' });
+    const { image }: Image = req.body;
+
+    if (!image) {
+      const errorResponse: ImageRespondError = {
+        message: 'Image data is required in base64 format',
+        status: 400,
+      };
+      res.status(400).json(errorResponse);
       return;
     }
 
-    const { folder = 'default' } = req.body; // Accept folder as a part of the request body
-    const uploadResult = await cloudinary.uploader.upload_stream(
-      {
-        folder,
-        resource_type: 'image',
-      },
-      (error, result) => {
-        if (error) {
-          throw error;
-        }
-        res.status(200).json({
-          message: 'Image uploaded successfully',
-          uri: result?.secure_url,
-          folder: result?.folder,
-        });
-      }
-    );
-    req.file.stream.pipe(uploadResult); // Pipe the uploaded file stream to Cloudinary
-  } catch (error) {
+    // Upload image to Cloudinary under the 'avatars' folder
+    const uploadResult = await cloudinary.uploader.upload(image, {
+      folder: 'avatars',
+    });
+
+    const successResponse: ImageRespondSuccess = {
+      message: 'Avatar uploaded successfully',
+      uri: uploadResult.secure_url,
+      public_id: uploadResult.public_id,
+      status: 200,
+    };
+
+    res.status(200).json(successResponse);
+  } catch (error: any) {
     console.error(error);
-    res.status(500).json({ error: 'An error occurred while uploading the image' });
+    const errorResponse: ImageRespondError = {
+      message: error.message || 'An error occurred while uploading the avatar',
+      status: 500,
+    };
+    res.status(500).json(errorResponse);
   }
 });
 
